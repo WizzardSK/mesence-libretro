@@ -12,6 +12,9 @@ namespace fs = std::experimental::filesystem;
 #include <algorithm>
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/UTF8Util.h"
+#ifdef LIBRETRO
+	#include "Libretro/VfsFile.h"
+#endif
 
 string FolderUtilities::_homeFolder = "";
 string FolderUtilities::_saveFolderOverride = "";
@@ -148,6 +151,12 @@ string FolderUtilities::GetExtension(string filename)
 
 void FolderUtilities::CreateFolder(string folder)
 {
+#ifdef LIBRETRO
+	if(VfsIo::CreateFolderIfSupported(folder)) {
+		return;
+	}
+#endif
+
 	std::error_code errorCode;
 	fs::create_directory(fs::u8path(folder), errorCode);
 }
@@ -155,6 +164,13 @@ void FolderUtilities::CreateFolder(string folder)
 vector<string> FolderUtilities::GetFolders(string rootFolder)
 {
 	vector<string> folders;
+
+#ifdef LIBRETRO
+	//Prevent excessive recursion (same 2-level limit as the filesystem code below)
+	if(VfsIo::GetEntries(rootFolder, nullptr, &folders, nullptr, 1)) {
+		return folders;
+	}
+#endif
 
 	std::error_code errorCode;
 	if(!fs::is_directory(fs::u8path(rootFolder), errorCode)) {
@@ -179,6 +195,12 @@ vector<string> FolderUtilities::GetFilesInFolder(string rootFolder, std::unorder
 {
 	vector<string> files;
 	vector<string> folders = { { rootFolder } };
+
+#ifdef LIBRETRO
+	if(VfsIo::GetEntries(rootFolder, &files, nullptr, &extensions, recursive ? maxDepth : 0)) {
+		return files;
+	}
+#endif
 
 	std::error_code errorCode;
 	if(!fs::is_directory(fs::u8path(rootFolder), errorCode)) {

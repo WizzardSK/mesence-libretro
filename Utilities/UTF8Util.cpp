@@ -64,4 +64,10 @@ namespace utf8
 		return result;
 #endif
 	}
+
+#ifdef LIBRETRO
+	//Key functions for the VFS-backed streams - see the comment in UTF8Util.h.
+	ifstream::~ifstream() {}
+	ofstream::~ofstream() {}
+#endif
 }

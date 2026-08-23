@@ -1,71 +1,118 @@
-#Welcome to what must be the most terrible makefile ever (but hey, it works)
+#Greatly simplified since we only need to build for libretro
 #Both clang & gcc work fine - clang seems to output faster code
-#.NET 6 (and its dev tools) must be installed to compile the UI.
-#The emulation core also requires SDL2.
-#Run "make" to build, "make run" to run
 
 MESENFLAGS=
 
-ifeq ($(USE_GCC),true)
-	CXX := g++
-	CC := gcc
-	PROFILE_GEN_FLAG := -fprofile-generate
-	PROFILE_USE_FLAG := -fprofile-use
-else
-	CXX := clang++
-	CC := clang
-	PROFILE_GEN_FLAG := -fprofile-instr-generate=$(CURDIR)/PGOHelper/pgo.profraw
-	PROFILE_USE_FLAG := -fprofile-instr-use=$(CURDIR)/PGOHelper/pgo.profdata
+#Nintendo Switch: switch_rules points CC/CXX/AR at devkitA64, so it has to be
+#included before any of the toolchain-dependent variables below are evaluated
+ifeq ($(platform),libnx)
+	include $(DEVKITPRO)/libnx/switch_rules
 endif
 
-SDL2LIB := $(shell sdl2-config --libs)
-SDL2INC := $(shell sdl2-config --cflags)
+CXX ?= g++
+CC ?= gcc
+
+#`c++`/`g++-14`/... all report GCC, so detect clang instead of matching on the name
+USE_GCC ?= $(shell $(CXX) --version | head -1 | grep -qi clang && echo false || echo true)
+
+DEBUG ?= 0
+HAVE_LTO ?= 1
+STATICLINK ?= true
 
 LINKCHECKUNRESOLVED := -Wl,-z,defs
 
 LINKOPTIONS :=
+LIBS :=
 MESENOS :=
 UNAME_S := $(shell uname -s)
+MACHINE := $(shell $(CXX) -dumpmachine)
 
-ifeq ($(UNAME_S),Linux)
+#The Windows core is cross-compiled from Linux (MXE), so the target triple -
+#not uname - decides whether this is a Windows build
+ifeq ($(platform),libnx)
+	#Nintendo Switch builds a static library that gets linked into RetroArch
+	MESENOS := libnx
+	STATICLIB := mesen2_libretro_libnx.a
+	#gnu++17 rather than the global --std=c++17 (CXXFLAGS puts MESENFLAGS after
+	#it, so this wins). __STRICT_ANSI__ is what hurts here, in two places:
+	#newlib keeps __BSD_VISIBLE/__MISC_VISIBLE at 0 without _DEFAULT_SOURCE,
+	#which loses <sys/select.h> and u_long for Utilities/Socket.cpp, and gcc's
+	#own limits.h withholds LLONG_MAX in C++ mode, which sends Lua/luaconf.h
+	#into "#error Compiler does not support 'long long'". glibc targets notice
+	#neither, since glibc turns _DEFAULT_SOURCE on whatever the dialect.
+	MESENFLAGS += -DSWITCH=1 -D__SWITCH__ -DHAVE_LIBNX -D_LARGEFILE_SOURCE -std=gnu++17
+	MESENFLAGS += -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
+	MESENFLAGS += -ffunction-sections -fdata-sections -ftls-model=local-exec
+	MESENFLAGS += -I$(DEVKITPRO)/libnx/include -I$(DEVKITPRO)/portlibs/switch/include
+	HAVE_LTO := 0
+	STATICLINK := false
+	LINKCHECKUNRESOLVED :=
+else ifneq ($(findstring mingw,$(MACHINE)),)
+	MESENOS := windows
+	SHAREDLIB := mesen2_libretro.dll
+	LINKCHECKUNRESOLVED := -Wl,--no-undefined
+	STATICLINK := true
+	LINKOPTIONS += -static
+	#winmm for timeBeginPeriod/timeEndPeriod (PlatformUtilities)
+	LIBS += -lws2_32 -liphlpapi -lole32 -loleaut32 -luuid -lwinmm
+else ifeq ($(UNAME_S),Linux)
 	MESENOS := linux
 	SHAREDLIB := mesen2_libretro.so
 else ifeq ($(UNAME_S),Darwin)
 	MESENOS := osx
-	SHAREDLIB := mesen2_libretro.dylib
-	LTO := false
+	ifeq ($(platform),ios9)
+		LIBRETRO_APPLE_PLATFORM := arm64-apple-ios9.0
+		LIBRETRO_APPLE_ISYSROOT := $(shell xcodebuild -version -sdk iphoneos Path)
+		SHAREDLIB := mesen2_libretro_ios.dylib
+		MESENFLAGS += -target $(LIBRETRO_APPLE_PLATFORM)
+		MESENFLAGS += -isysroot $(LIBRETRO_APPLE_ISYSROOT)
+      MESENFLAGS += -DLUA_USE_IOS
+	else ifeq ($(platform),ios-arm64)
+		LIBRETRO_APPLE_PLATFORM := arm64-apple-ios13.0
+		LIBRETRO_APPLE_ISYSROOT := $(shell xcodebuild -version -sdk iphoneos Path)
+		SHAREDLIB := mesen2_libretro_ios.dylib
+		MESENFLAGS += -target $(LIBRETRO_APPLE_PLATFORM)
+		MESENFLAGS += -isysroot $(LIBRETRO_APPLE_ISYSROOT)
+      MESENFLAGS += -DLUA_USE_IOS
+	else ifeq ($(platform),tvos-arm64)
+		LIBRETRO_APPLE_PLATFORM := arm64-apple-tvos13.0
+		LIBRETRO_APPLE_ISYSROOT := $(shell xcodebuild -version -sdk appletvos Path)
+		SHAREDLIB := mesen2_libretro_tvos.dylib
+		MESENFLAGS += -target $(LIBRETRO_APPLE_PLATFORM)
+		MESENFLAGS += -isysroot $(LIBRETRO_APPLE_ISYSROOT)
+      MESENFLAGS += -DLUA_USE_IOS
+	else ifeq ($(platform),osx)
+		LIBRETRO_APPLE_ISYSROOT := $(shell xcodebuild -version -sdk macosx Path)
+		SHAREDLIB := mesen2_libretro.dylib
+		MESENFLAGS += -mmacosx-version-min=10.15
+		MESENFLAGS += -isysroot $(LIBRETRO_APPLE_ISYSROOT)
+		ifeq ($(arch),arm)
+			LIBRETRO_APPLE_PLATFORM := arm64-apple-macos10.15
+		else
+			LIBRETRO_APPLE_PLATFORM := x86_64-apple-macos10.15
+		endif
+		MESENFLAGS += -target $(LIBRETRO_APPLE_PLATFORM)
+	else
+		SHAREDLIB := mesen2_libretro.dylib
+	endif
+	HAVE_LTO := 0
 	STATICLINK := false
 	LINKCHECKUNRESOLVED :=
 else ifeq ($(OS),Windows_NT)
-	   SHAREDLIB := mesen2_libretro.dll
+	MESENOS := windows
+	SHAREDLIB := mesen2_libretro.dll
 endif
 
-MESENFLAGS += -m64
-
-MACHINE := $(shell uname -m)
-ifeq ($(MACHINE),x86_64)
+ifneq ($(filter x86_64%,$(MACHINE)),)
 	MESENPLATFORM := $(MESENOS)-x64
 endif
-ifneq ($(filter %86,$(MACHINE)),)
-	MESENPLATFORM := $(MESENOS)-x64
-endif
-# TODO: this returns `aarch64` on one of my machines...
-ifneq ($(filter arm%,$(MACHINE)),)
+ifneq ($(filter arm64% aarch64%,$(MACHINE)),)
 	MESENPLATFORM := $(MESENOS)-arm64
 endif
-ifeq ($(MACHINE),aarch64)
-	MESENPLATFORM := $(MESENOS)-arm64
-	ifeq ($(USE_GCC),true)
-		#don't set -m64 on arm64 for gcc (unrecognized option)
-		MESENFLAGS=
-	endif
-endif
-
-DEBUG ?= 0
 
 ifeq ($(DEBUG),0)
 	MESENFLAGS += -O3
-	ifneq ($(LTO),false)
+	ifeq ($(HAVE_LTO),1)
 		MESENFLAGS += -DHAVE_LTO
 		ifneq ($(USE_GCC),true)
 			MESENFLAGS += -flto=thin
@@ -94,46 +141,15 @@ $(warning Unrecognised $$(SANITIZER) value: $(SANITIZER))
 	endif
 endif
 
-ifeq ($(PGO),profile)
-	MESENFLAGS += ${PROFILE_GEN_FLAG}
-endif
-
-ifeq ($(PGO),optimize)
-	MESENFLAGS += ${PROFILE_USE_FLAG}
-endif
-
 ifneq ($(STATICLINK),false)
 	LINKOPTIONS += -static-libgcc -static-libstdc++ 
 endif
 
-ifeq ($(MESENOS),osx)
-	LINKOPTIONS += -framework Foundation -framework Cocoa -framework GameController -framework CoreHaptics -Wl,-rpath,/opt/local/lib
-endif
-
-CXXFLAGS = -fPIC -Wall --std=c++17 $(MESENFLAGS) $(SDL2INC) -I $(realpath ./) -I $(realpath ./Core) -I $(realpath ./Utilities) -I $(realpath ./Sdl) -I $(realpath ./Linux) -I $(realpath ./MacOS)
-OBJCXXFLAGS = $(CXXFLAGS)
+CXXFLAGS = -fPIC -Wall --std=c++17 $(MESENFLAGS) -I $(realpath ./) -I $(realpath ./Core) -I $(realpath ./Utilities)
 CFLAGS = -fPIC -Wall $(MESENFLAGS)
 
-OBJFOLDER := obj.$(MESENPLATFORM)
-DEBUGFOLDER := bin/$(MESENPLATFORM)/Debug
-RELEASEFOLDER := bin/$(MESENPLATFORM)/Release
-ifeq ($(DEBUG), 0)
-	OUTFOLDER = $(RELEASEFOLDER)
-	BUILD_TYPE := Release
-	OPTIMIZEUI := -p:OptimizeUi=true
-else
-	OUTFOLDER = $(DEBUGFOLDER)
-	BUILD_TYPE := Debug
-	OPTIMIZEUI :=
-endif
-
-
-ifeq ($(USE_AOT),true)
-	PUBLISHFLAGS ?=  -r $(MESENPLATFORM) -p:PublishSingleFile=false -p:PublishAot=true -p:SelfContained=true
-else
-	PUBLISHFLAGS ?=  -r $(MESENPLATFORM) --no-self-contained true -p:PublishSingleFile=true
-endif
-
+LIBRETROSRC := Libretro/libretro.cpp Libretro/VfsFile.cpp
+LIBRETROOBJ := $(LIBRETROSRC:.cpp=.o)
 
 CORESRC := $(shell find Core -name '*.cpp')
 COREOBJ := $(CORESRC:.cpp=.o)
@@ -141,82 +157,30 @@ COREOBJ := $(CORESRC:.cpp=.o)
 UTILSRC := $(shell find Utilities -name '*.cpp' -o -name '*.c')
 UTILOBJ := $(addsuffix .o,$(basename $(UTILSRC)))
 
-SDLSRC := $(shell find Sdl -name '*.cpp')
-SDLOBJ := $(SDLSRC:.cpp=.o)
-
 SEVENZIPSRC := $(shell find SevenZip -name '*.c')
 SEVENZIPOBJ := $(SEVENZIPSRC:.c=.o)
 
-LUASRC := $(shell find Lua -name '*.c')
+#unix.c/unixdgram.c/unixstream.c/serial.c are optional luasocket modules that
+#are never registered by the core (and don't build on Windows)
+LUASRC := $(filter-out Lua/unix.c Lua/unixdgram.c Lua/unixstream.c Lua/serial.c,$(shell find Lua -name '*.c'))
 LUAOBJ := $(LUASRC:.c=.o)
 
-ifeq ($(MESENOS),linux)
-	LINUXSRC := $(shell find Linux -name '*.cpp')
-else
-	LINUXSRC :=
-endif
-LINUXOBJ := $(LINUXSRC:.cpp=.o)
-
-ifeq ($(MESENOS),osx)
-	MACOSSRC := $(shell find MacOS -name '*.mm')
-else
-	MACOSSRC :=
-endif
-MACOSOBJ := $(MACOSSRC:.mm=.o)
-
-DLLSRC := $(shell find InteropDLL -name '*.cpp')
-DLLOBJ := $(DLLSRC:.cpp=.o)
-
-ifeq ($(SYSTEM_LIBEVDEV), true)
-	LIBEVDEVLIB := $(shell pkg-config --libs libevdev)
-	LIBEVDEVINC := $(shell pkg-config --cflags libevdev)
-else
-	LIBEVDEVSRC := $(shell find Linux/libevdev -name '*.c')
-	LIBEVDEVOBJ := $(LIBEVDEVSRC:.c=.o)
-	LIBEVDEVINC := -I../
+ifeq ($(platform),unix)
+LDFLAGS += -Wl,--version-script=Libretro/link.T -Wl,--no-undefined
 endif
 
-ifeq ($(MESENOS),linux)
-	X11LIB := -lX11
-else
-	X11LIB :=
-endif
-
-FSLIB := -lstdc++fs
-
-ifeq ($(MESENOS),osx)
-	LIBEVDEVOBJ := 
-	LIBEVDEVINC := 
-	LIBEVDEVSRC := 
-	FSLIB := 
-	ifeq ($(USE_AOT),true)
-		PUBLISHFLAGS := -t:BundleApp -p:UseAppHost=true -p:RuntimeIdentifier=$(MESENPLATFORM) -p:PublishSingleFile=false -p:PublishAot=true -p:SelfContained=true
-	else
-		PUBLISHFLAGS := -t:BundleApp -p:UseAppHost=true -p:RuntimeIdentifier=$(MESENPLATFORM) -p:SelfContained=true -p:PublishSingleFile=false -p:PublishReadyToRun=false
-	endif
-endif
-
-libretro: CFLAGS   += -D LIBRETRO $(fpic) $(LTO)
-libretro: CXXFLAGS += -D LIBRETRO $(fpic) -std=c++17 $(LTO)
-libretro: LDFLAGS  += $(LTO)
+libretro: CFLAGS   += -D LIBRETRO
+libretro: CXXFLAGS += -D LIBRETRO
 
 all: libretro
 
-ui: InteropDLL/$(OBJFOLDER)/$(SHAREDLIB)
-	mkdir -p $(OUTFOLDER)/Dependencies
-	rm -fr $(OUTFOLDER)/Dependencies/*
-	cp InteropDLL/$(OBJFOLDER)/$(SHAREDLIB) $(OUTFOLDER)/$(SHAREDLIB)
-	#Called twice because the first call copies native libraries to the bin folder which need to be included in Dependencies.zip
-	#Don't run with AOT flags the first time to reduce build duration
-	cd UI && dotnet publish -c $(BUILD_TYPE) $(OPTIMIZEUI) -r $(MESENPLATFORM)
-	cd UI && dotnet publish -c $(BUILD_TYPE) $(OPTIMIZEUI) $(PUBLISHFLAGS)
-
-libretro: Libretro/libretro.o $(SEVENZIPOBJ) $(LUAOBJ) $(UTILOBJ) $(COREOBJ)
-	mkdir -p InteropDLL/$(OBJFOLDER)
-	$(CXX) $(CXXFLAGS) $(LINKOPTIONS) $(LINKCHECKUNRESOLVED) $(LDFLAGS) -Wl,--version-script=Libretro/link.T -Wl,--no-undefined -shared -o $(SHAREDLIB) Libretro/libretro.o $(SEVENZIPOBJ) $(LUAOBJ) $(UTILOBJ) $(COREOBJ) -pthread $(FSLIB)
-
-pgohelper: InteropDLL/$(OBJFOLDER)/$(SHAREDLIB)
-	mkdir -p PGOHelper/$(OBJFOLDER) && cd PGOHelper/$(OBJFOLDER) && $(CXX) $(CXXFLAGS) $(LINKCHECKUNRESOLVED) -o pgohelper ../PGOHelper.cpp ../../bin/pgohelperlib.so -pthread $(FSLIB) $(SDL2LIB) $(LIBEVDEVLIB) $(X11LIB)
+ifeq ($(platform),libnx)
+libretro: $(LIBRETROOBJ) $(SEVENZIPOBJ) $(LUAOBJ) $(UTILOBJ) $(COREOBJ)
+	$(AR) rcs $(STATICLIB) $^
+else
+libretro: $(LIBRETROOBJ) $(SEVENZIPOBJ) $(LUAOBJ) $(UTILOBJ) $(COREOBJ)
+	$(CXX) $(CXXFLAGS) $(LINKOPTIONS) $(LINKCHECKUNRESOLVED) $(LDFLAGS) -shared -o $(SHAREDLIB) $(LIBRETROOBJ) $(SEVENZIPOBJ) $(LUAOBJ) $(UTILOBJ) $(COREOBJ) -pthread $(LIBS)
+endif
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -224,30 +188,11 @@ pgohelper: InteropDLL/$(OBJFOLDER)/$(SHAREDLIB)
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-%.o: %.mm
-	$(CXX) $(OBJCXXFLAGS) -c $< -o $@
-
-InteropDLL/$(OBJFOLDER)/$(SHAREDLIB): $(SEVENZIPOBJ) $(LUAOBJ) $(UTILOBJ) $(COREOBJ) $(SDLOBJ) $(LIBEVDEVOBJ) $(LINUXOBJ) $(DLLOBJ) $(MACOSOBJ)
-	mkdir -p bin
-	mkdir -p InteropDLL/$(OBJFOLDER)
-	$(CXX) $(CXXFLAGS) $(LINKOPTIONS) $(LINKCHECKUNRESOLVED) -shared -o $(SHAREDLIB) $(DLLOBJ) $(SEVENZIPOBJ) $(LUAOBJ) $(LINUXOBJ) $(MACOSOBJ) $(LIBEVDEVOBJ) $(UTILOBJ) $(SDLOBJ) $(COREOBJ) $(SDL2INC) -pthread $(FSLIB) $(SDL2LIB) $(LIBEVDEVLIB) $(X11LIB)
-	cp $(SHAREDLIB) bin/pgohelperlib.so
-	mv $(SHAREDLIB) InteropDLL/$(OBJFOLDER)
-
-pgo:
-	./buildPGO.sh
-
-run:
-	$(OUTFOLDER)/$(MESENPLATFORM)/publish/Mesen
-
 clean:
-	rm -r -f $(COREOBJ)
-	rm -r -f $(UTILOBJ)
-	rm -r -f $(LINUXOBJ) $(LIBEVDEVOBJ)
-	rm -r -f $(SDLOBJ)
-	rm -r -f $(SEVENZIPOBJ)
-	rm -r -f $(LUAOBJ)
-	rm -r -f $(MACOSOBJ)
-	rm -r -f $(DLLOBJ)
-	rm -r -f $(SHAREDLIB)
-
+	rm -f $(COREOBJ)
+	rm -f $(UTILOBJ)
+	rm -f $(SEVENZIPOBJ)
+	rm -f $(LUAOBJ)
+	rm -f $(SHAREDLIB)
+	rm -f $(STATICLIB)
+	rm -f $(LIBRETROOBJ)

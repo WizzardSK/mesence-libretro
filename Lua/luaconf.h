@@ -11,6 +11,21 @@
 #include <limits.h>
 #include <stddef.h>
 
+/*
+** devkitA64's newlib does not make LLONG_MAX visible to C++ translation units,
+** so the LUA_INT_LONGLONG branch further down falls through to its
+** "Compiler does not support 'long long'" #error - even though the compiler
+** supports it perfectly well, and even though the C files in this same build
+** see the macro and compile. GCC always predefines __LONG_LONG_MAX__, so fill
+** the three macros from it rather than take the error's advice and drop Lua to
+** LUA_32BITS, which would change the integer type on the Switch only.
+*/
+#if defined(__SWITCH__) && !defined(LLONG_MAX) && defined(__LONG_LONG_MAX__)
+#define LLONG_MAX	__LONG_LONG_MAX__
+#define LLONG_MIN	(-LLONG_MAX - 1LL)
+#define ULLONG_MAX	(LLONG_MAX * 2ULL + 1ULL)
+#endif
+
 
 /*
 ** ===================================================================
