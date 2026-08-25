@@ -2,6 +2,7 @@
 #Both clang & gcc work fine - clang seems to output faster code
 
 MESENFLAGS=
+USE_GCC ?= true
 
 ifeq ($(USE_GCC),true)
 	CXX := g++
