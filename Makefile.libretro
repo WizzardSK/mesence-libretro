@@ -5,11 +5,11 @@ MESENFLAGS=
 USE_GCC ?= true
 
 ifeq ($(USE_GCC),true)
-	CXX := g++
-	CC := gcc
+	CXX ?= g++
+	CC ?= gcc
 else
-	CXX := clang++
-	CC := clang
+	CXX ?= clang++
+	CC ?= clang
 endif
 
 LINKCHECKUNRESOLVED := -Wl,-z,defs
