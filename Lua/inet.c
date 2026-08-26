@@ -371,7 +371,15 @@ const char *inet_trydisconnect(p_socket ps, int family, p_timeout tm)
         }
         case AF_INET6: {
             struct sockaddr_in6 sin6;
+#ifdef IN6ADDR_ANY_INIT
             struct in6_addr addrany = IN6ADDR_ANY_INIT;
+#else
+            /* devkitA64's newlib declares in6_addr but not IN6ADDR_ANY_INIT.
+             * The wildcard address is all zeroes by definition, and zeroing it
+             * this way does not depend on how in6_addr is laid out. */
+            struct in6_addr addrany;
+            memset((char *) &addrany, 0, sizeof(addrany));
+#endif
             memset((char *) &sin6, 0, sizeof(sin6));
             sin6.sin6_family = AF_UNSPEC;
             sin6.sin6_addr = addrany;
