@@ -33,7 +33,12 @@ ifeq ($(platform),libnx)
 	#Nintendo Switch builds a static library that gets linked into RetroArch
 	MESENOS := libnx
 	STATICLIB := mesen2_libretro_libnx.a
-	MESENFLAGS += -DSWITCH=1 -D__SWITCH__ -DHAVE_LIBNX -D_LARGEFILE_SOURCE
+	#_DEFAULT_SOURCE because the build is --std=c++17, so __STRICT_ANSI__ is
+	#defined and newlib leaves __BSD_VISIBLE/__MISC_VISIBLE at 0: no
+	#<sys/select.h> pulled in by <sys/types.h> and no u_long, both of which
+	#Utilities/Socket.cpp uses. glibc defines it by default whatever the
+	#dialect, which is why only this platform notices.
+	MESENFLAGS += -DSWITCH=1 -D__SWITCH__ -DHAVE_LIBNX -D_LARGEFILE_SOURCE -D_DEFAULT_SOURCE
 	MESENFLAGS += -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 	MESENFLAGS += -ffunction-sections -fdata-sections -ftls-model=local-exec
 	MESENFLAGS += -I$(DEVKITPRO)/libnx/include -I$(DEVKITPRO)/portlibs/switch/include
@@ -46,7 +51,8 @@ else ifneq ($(findstring mingw,$(MACHINE)),)
 	LINKCHECKUNRESOLVED := -Wl,--no-undefined
 	STATICLINK := true
 	LINKOPTIONS += -static
-	LIBS += -lws2_32 -liphlpapi -lole32 -loleaut32 -luuid
+	#winmm for timeBeginPeriod/timeEndPeriod (PlatformUtilities)
+	LIBS += -lws2_32 -liphlpapi -lole32 -loleaut32 -luuid -lwinmm
 else ifeq ($(UNAME_S),Linux)
 	MESENOS := linux
 	SHAREDLIB := mesen2_libretro.so
