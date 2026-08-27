@@ -1,13 +1,13 @@
 #include "pch.h"
 #include "UPnPPortMapper.h"
 
-#if defined(_WIN32) && !(defined) LIBRETRO
+#if defined(_WIN32) && !defined (LIBRETRO)
 	#include <winsock2.h>
 	#include <natupnp.h>
 	#include <ws2tcpip.h>
 #endif
 
-#if defined(_WIN32) && !(defined) LIBRETRO
+#if defined(_WIN32) && !defined (LIBRETRO)
 bool UPnPPortMapper::AddNATPortMapping(uint16_t internalPort, uint16_t externalPort, IPProtocol protocol)
 {
 	bool result = false;
