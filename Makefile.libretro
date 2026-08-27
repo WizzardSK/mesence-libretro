@@ -46,7 +46,8 @@ else ifneq ($(findstring mingw,$(MACHINE)),)
 	LINKCHECKUNRESOLVED := -Wl,--no-undefined
 	STATICLINK := true
 	LINKOPTIONS += -static
-	LIBS += -lws2_32 -liphlpapi -lole32 -loleaut32 -luuid
+	#winmm for timeBeginPeriod/timeEndPeriod (PlatformUtilities)
+	LIBS += -lws2_32 -liphlpapi -lole32 -loleaut32 -luuid -lwinmm
 else ifeq ($(UNAME_S),Linux)
 	MESENOS := linux
 	SHAREDLIB := mesen2_libretro.so
