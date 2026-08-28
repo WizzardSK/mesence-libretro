@@ -396,7 +396,7 @@ static int opt_setmembership(lua_State *L, p_socket ps, int level, int name)
 
 static int opt_ip6_setmembership(lua_State *L, p_socket ps, int level, int name)
 {
-    struct ipv6_mreq val;                   /* obj, opt-name, table */
+    LUASOCKET_IPV6_MREQ val;                /* obj, opt-name, table */
     memset(&val, 0, sizeof(val));
     if (!lua_istable(L, 3)) auxiliar_typeerror(L,3,lua_typename(L, LUA_TTABLE));
     lua_pushstring(L, "multiaddr");

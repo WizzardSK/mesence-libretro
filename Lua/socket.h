@@ -22,6 +22,22 @@
 #define LUA_GAI_STRERROR gai_strerror
 #endif
 
+/* devkitA64's newlib declares in6_addr, sockaddr_in6 and the IPV6_*_MEMBERSHIP
+ * option constants, but not the struct those options take. There is no macro
+ * to test a struct tag for, so this keys off the platform instead, and it
+ * declares its own tag rather than struct ipv6_mreq so that a future devkitA64
+ * that does declare the real one cannot collide with it. The layout is the one
+ * RFC 3493 fixes, which is what setsockopt() expects either way. */
+#ifdef __SWITCH__
+struct luasocket_ipv6_mreq {
+    struct in6_addr ipv6mr_multiaddr;
+    unsigned int    ipv6mr_interface;
+};
+#define LUASOCKET_IPV6_MREQ struct luasocket_ipv6_mreq
+#else
+#define LUASOCKET_IPV6_MREQ struct ipv6_mreq
+#endif
+
 /*=========================================================================*\
 * The connect and accept functions accept a timeout and their
 * implementations are somewhat complicated. We chose to move
