@@ -542,7 +542,7 @@ extern "C" {
 				"disabled" },
 			{ MesenAudioSampleRate, "Audio - Sample Rate", "Sample Rate", "Audio output sample rate", NULL, "audio",
 				{{ "48000", "48000 Hz" }, { "96000", "96000 Hz" }, { "11025", "11025 Hz" }, { "22050", "22050 Hz" }, { "44100", "44100 Hz" }, { NULL, NULL }},
-				"48000" },
+				"44100" },
 
 			// Input category
 			{ MesenControllerTurboSpeed, "Input - Controller Turbo Speed", "Turbo Speed", "Turbo button speed", NULL, "input",
