@@ -226,6 +226,7 @@ public:
                         }
                     }
                     // suppressed: if(probeMask != 0) fprintf(stderr, "[libretro] RefreshState: raw-probe computed mask 0x%04x for port %d\n", probeMask, port);
+                    mask = probeMask;
                 }
             } else {
                 // Query each button individually (0..15)

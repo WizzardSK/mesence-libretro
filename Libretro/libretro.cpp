@@ -22,6 +22,7 @@
 #include "libretro.h"
 #include "../Core/Shared/Audio/SoundMixer.h"
 
+#include "../Core/Shared/BaseControlManager.h"
 
 #include "../Core/NES/NesConsole.h"
 #include "../Core/SNES/SnesConsole.h"
@@ -1227,12 +1228,12 @@ void libretro_probe_inputs(const char* tag)
 		// Frame stepping: run a single emulated frame and submit video/audio to libretro callbacks.
 		if(_emu && _emu->GetConsole()) {
 			// Refresh input state before running the frame
+			auto consoleIf = _emu->GetConsole();
+
 			if(_keyManager) {
-				_keyManager->RefreshState();
+			    consoleIf->GetControlManager()->UpdateInputState();
 			}
 
-			// Run one frame
-			auto consoleIf = _emu->GetConsole();
 			consoleIf->RunFrame();
 			// Allow emulator to run pre-frame hooks (UI, stats, etc.)
 			_emu->OnBeforeSendFrame();
