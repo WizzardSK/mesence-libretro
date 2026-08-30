@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "UTF8Util.h"
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(LIBRETRO)
 	#include <codecvt>
 	#include <locale>
 #else
@@ -41,7 +41,7 @@ namespace utf8
 
 	string utf8::encode(const std::u16string& wstr)
 	{
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(LIBRETRO)
 		std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> conv;
 		return conv.to_bytes(wstr);
 #else
