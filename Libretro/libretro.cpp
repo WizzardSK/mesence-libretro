@@ -406,6 +406,10 @@ extern "C" {
 		// Create libretro audio device so we can register it later once a ROM is loaded
 		_audioDevice.reset(new LibretroAudioDevice());
 
+		if(_emu->GetSoundMixer()) {
+		    _emu->GetSoundMixer()->RegisterAudioDevice(_audioDevice.get());
+		}
+
 		// NOTE: many NES-specific flags moved into NesConfig inside EmuSettings.
 		// Example: to set FDS auto-load you'd edit NesConfig and call SetNesConfig.
 		// _emu->GetSettings()->GetNesConfig().FdsAutoLoadDisk = true; // then SetNesConfig(...)
@@ -1687,6 +1691,9 @@ void libretro_probe_inputs(const char* tag)
 				SmsConfig smsCfg = _emu->GetSettings()->GetSmsConfig();
 				smsCfg.Port1.Type = (_inputDevices[0] == DEVICE_GAMEPAD) ? ControllerType::SmsController : ControllerType::None;
 				smsCfg.Port2.Type = (_inputDevices[1] == DEVICE_GAMEPAD) ? ControllerType::SmsController : ControllerType::None;
+				for(int i = 0; i < 4; i++) {
+                smsCfg.ChannelVolumes[i] = 100;
+            }
 				_emu->GetSettings()->SetSmsConfig(smsCfg);
 				break;
 			}
