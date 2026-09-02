@@ -1,0 +1,29 @@
+name: i686-preflight
+on: [push, workflow_dispatch]
+jobs:
+  android-x86:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          $ANDROID_NDK_LATEST_HOME/ndk-build --no-print-directory -j$(nproc) -C Libretro/jni APP_ABI=x86
+          file Libretro/libs/x86/libretro.so
+  linux-i686:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-multilib gcc-multilib
+      - run: |
+          echo "dumpmachine: $(g++ -m32 -dumpmachine)"
+          make -f Makefile.libretro libretro -j$(nproc) HAVE_LTO=0 CXX="g++ -m32" CC="gcc -m32" 2>&1 | tail -40
+          file *.so
+  windows-i686:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-mingw-w64-i686-posix
+      - run: |
+          make -f Makefile.libretro libretro -j$(nproc) HAVE_LTO=0 \
+            CXX=i686-w64-mingw32-g++-posix CC=i686-w64-mingw32-gcc-posix \
+            AR=i686-w64-mingw32-ar 2>&1 | tail -40
+          file *.dll
